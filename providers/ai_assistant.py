@@ -114,6 +114,11 @@ async def _call_anthropic(messages):
     return reply_text
 
 
+class TranslateRequest(BaseModel):
+    text: str
+    target_lang: str  # "Russian" yoki "English"
+
+
 @router.post("/api/ai-chat")
 async def ai_chat(req: ChatRequest):
     if not req.messages:
@@ -125,3 +130,43 @@ async def ai_chat(req: ChatRequest):
         reply_text = await _call_gemini(req.messages)
 
     return {"reply": reply_text}
+
+
+@router.post("/api/translate")
+async def translate_text(req: TranslateRequest):
+    """Og'zaki javoblarni RU/EN'ga tarjima qilish uchun — ilova avval
+    to'g'ridan-to'g'ri Anthropic'ga (kalitsiz) murojaat qilardi, bu esa faqat
+    claude.ai ichida ishlar edi. Endi shu backend orqali, Gemini bilan ishlaydi."""
+    if not config.GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="Tarjima hali sozlanmagan (GEMINI_API_KEY yo'q)")
+
+    sys_prompt = (
+        f"You are a professional medical translator translating Uzbek nursing exam content "
+        f"into {req.target_lang}. Preserve all medical terminology, drug names, and numeric "
+        f"values (dosages, percentages, durations) exactly and accurately. Output ONLY the "
+        f"translated text with no preamble, no notes, no quotation marks, and no markdown."
+    )
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            resp = await client.post(
+                url,
+                headers={"x-goog-api-key": config.GEMINI_API_KEY, "Content-Type": "application/json"},
+                json={
+                    "contents": [{"role": "user", "parts": [{"text": req.text}]}],
+                    "system_instruction": {"parts": [{"text": sys_prompt}]},
+                    "generationConfig": {"maxOutputTokens": 2048},
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=502, detail=f"Gemini xatosi: {e.response.text[:200]}")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Gemini'ga ulanib bo'lmadi: {str(e)}")
+
+    try:
+        translation = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError):
+        translation = ""
+    return {"translation": translation}
