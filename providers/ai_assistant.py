@@ -14,6 +14,7 @@ So'rovlar to'g'ridan-to'g'ri ilovadan emas, shu backend orqali yuboriladi —
 chunki haqiqiy API kaliti mijoz tarafida (ilovada) hech qachon saqlanmasligi
 kerak (xavfsizlik uchun).
 """
+import asyncio
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -136,7 +137,13 @@ async def ai_chat(req: ChatRequest):
 async def translate_text(req: TranslateRequest):
     """Og'zaki javoblarni RU/EN'ga tarjima qilish uchun — ilova avval
     to'g'ridan-to'g'ri Anthropic'ga (kalitsiz) murojaat qilardi, bu esa faqat
-    claude.ai ichida ishlar edi. Endi shu backend orqali, Gemini bilan ishlaydi."""
+    claude.ai ichida ishlar edi. Endi shu backend orqali, Gemini bilan ishlaydi.
+
+    Gemini bepul tarifida daqiqasiga so'rovlar cheklangan (RPM limit) — uzun
+    javoblar bir necha bo'lakka bo'linib ketma-ket yuborilganda, bu chegaraga
+    tez yetib borishi mumkin. Shuning uchun 429 (rate limit) javobida serverning
+    o'zi biroz kutib, avtomatik qayta uradi — ilova buni bilishi shart emas.
+    """
     if not config.GEMINI_API_KEY:
         raise HTTPException(status_code=503, detail="Tarjima hali sozlanmagan (GEMINI_API_KEY yo'q)")
 
@@ -147,23 +154,40 @@ async def translate_text(req: TranslateRequest):
         f"translated text with no preamble, no notes, no quotation marks, and no markdown."
     )
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
+
+    max_attempts = 4
+    backoff_seconds = 3
+    last_error_text = ""
     async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            resp = await client.post(
-                url,
-                headers={"x-goog-api-key": config.GEMINI_API_KEY, "Content-Type": "application/json"},
-                json={
-                    "contents": [{"role": "user", "parts": [{"text": req.text}]}],
-                    "system_instruction": {"parts": [{"text": sys_prompt}]},
-                    "generationConfig": {"maxOutputTokens": 2048},
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=502, detail=f"Gemini xatosi: {e.response.text[:200]}")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Gemini'ga ulanib bo'lmadi: {str(e)}")
+        for attempt in range(max_attempts):
+            try:
+                resp = await client.post(
+                    url,
+                    headers={"x-goog-api-key": config.GEMINI_API_KEY, "Content-Type": "application/json"},
+                    json={
+                        "contents": [{"role": "user", "parts": [{"text": req.text}]}],
+                        "system_instruction": {"parts": [{"text": sys_prompt}]},
+                        "generationConfig": {"maxOutputTokens": 2048},
+                    },
+                )
+                if resp.status_code == 429 and attempt < max_attempts - 1:
+                    await asyncio.sleep(backoff_seconds)
+                    backoff_seconds *= 2
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            except httpx.HTTPStatusError as e:
+                last_error_text = e.response.text[:200]
+                if e.response.status_code == 429 and attempt < max_attempts - 1:
+                    await asyncio.sleep(backoff_seconds)
+                    backoff_seconds *= 2
+                    continue
+                raise HTTPException(status_code=502, detail=f"Gemini xatosi: {last_error_text}")
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"Gemini'ga ulanib bo'lmadi: {str(e)}")
+        else:
+            raise HTTPException(status_code=502, detail=f"Gemini tezlik chegarasi (rate limit) — qayta urinishlar tugadi: {last_error_text}")
 
     try:
         translation = data["candidates"][0]["content"]["parts"][0]["text"].strip()
