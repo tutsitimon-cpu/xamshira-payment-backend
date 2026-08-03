@@ -9,9 +9,15 @@ ruxsat bermaydi (bu "CORS" cheklovi deb ataladi). Server orqali o'qisak,
 bu cheklov umuman muammo tug'dirmaydi — server har qanday saytdan
 ma'lumot ololadi.
 
+Muhim: RSS manbaga so'rov qat'iy vaqt chegarasi (timeout) bilan yuboriladi.
+Aks holda, agar manba sekin/ishlamay qolsa, butun so'rov osilib qolib,
+foydalanuvchi ilovasida "Failed to fetch" xatosiga olib kelishi mumkin edi
+(bu — avval haqiqatan ham yuz bergan muammo).
+
 Yangi manba qo'shish uchun FEEDS ro'yxatiga shunchaki yangi qator qo'shing.
 """
 import time
+import httpx
 import feedparser
 from fastapi import APIRouter
 
@@ -22,6 +28,8 @@ FEEDS = [
     {"key": "who", "name": "WHO (Jahon sog'liqni saqlash tashkiloti)", "url": "https://www.who.int/rss-feeds/news-english.xml"},
 ]
 
+FETCH_TIMEOUT_SECONDS = 6  # bitta manba shundan ortiq javob bermasa, tashlab ketiladi
+
 _cache = {"data": None, "fetched_at": 0}
 CACHE_SECONDS = 60 * 30  # 30 daqiqada bir marta yangilanadi (har so'rovda emas)
 
@@ -30,7 +38,9 @@ def _fetch_all():
     items = []
     for feed in FEEDS:
         try:
-            parsed = feedparser.parse(feed["url"])
+            resp = httpx.get(feed["url"], timeout=FETCH_TIMEOUT_SECONDS, follow_redirects=True)
+            resp.raise_for_status()
+            parsed = feedparser.parse(resp.content)  # endi tarmoqqa chiqmaydi, faqat matnni o'qiydi
             for entry in parsed.entries[:15]:
                 items.append({
                     "source": feed["name"],
@@ -40,7 +50,7 @@ def _fetch_all():
                     "published": getattr(entry, "published", ""),
                 })
         except Exception:
-            continue  # bitta manba ishlamasa, qolganlari baribir ko'rsatiladi
+            continue  # bitta manba ishlamasa (yoki vaqt tugasa), qolganlari baribir ko'rsatiladi
     return items
 
 
