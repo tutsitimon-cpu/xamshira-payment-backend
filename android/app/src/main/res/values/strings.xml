@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Tibbiy Yordamchi</string>
+    <string name="title_activity_main">Tibbiy Yordamchi</string>
+    <string name="package_name">uz.xamshira.test</string>
+    <string name="custom_url_scheme">uz.xamshira.test</string>
+</resources>

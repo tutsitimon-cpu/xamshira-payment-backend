@@ -1,0 +1,9 @@
+{
+  "appId": "uz.xamshira.test",
+  "appName": "Tibbiy Yordamchi",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false
+  }
+}
