@@ -42,3 +42,7 @@ PAYNET_MERCHANT_ID = os.getenv("PAYNET_MERCHANT_ID", "")
 
 # --- Umumiy ---
 DATABASE_PATH = os.getenv("DATABASE_PATH", "subscriptions.db")
+
+# --- Qo'llab-quvvatlash xabarlarini Telegram'ga yuborish ---
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")  # @BotFather'dan olingan token — faqat Render env var sifatida kiritiladi
+DEVELOPER_CHAT_ID = os.getenv("DEVELOPER_CHAT_ID", "684813775")  # Xabarlar shu Telegram hisobga yuboriladi
