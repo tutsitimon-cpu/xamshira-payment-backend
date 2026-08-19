@@ -117,7 +117,7 @@ def redeem_code(req: RedeemRequest):
         conn.commit()
 
     # Ikkalasiga ham bonus kun qo'shiladi (mavjud obuna bo'lsa, davomiyligiga qo'shiladi)
-    extend_subscription(referrer_phone, tier="main", days=REFERRAL_BONUS_DAYS)
-    extend_subscription(phone, tier="main", days=REFERRAL_BONUS_DAYS)
+    extend_subscription(referrer_phone, tier="bundle", days=REFERRAL_BONUS_DAYS)
+    extend_subscription(phone, tier="bundle", days=REFERRAL_BONUS_DAYS)
 
     return {"success": True, "bonus_days": REFERRAL_BONUS_DAYS}

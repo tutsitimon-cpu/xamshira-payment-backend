@@ -57,23 +57,39 @@ async def _call_gemini(messages):
     ]
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
+    max_attempts = 3
+    backoff_seconds = 2
+    last_error = None
     async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            resp = await client.post(
-                url,
-                headers={"x-goog-api-key": config.GEMINI_API_KEY, "Content-Type": "application/json"},
-                json={
-                    "contents": contents,
-                    "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-                    "generationConfig": {"maxOutputTokens": 1024},
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=502, detail=f"Gemini xatosi: {e.response.text[:200]}")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Gemini'ga ulanib bo'lmadi: {str(e)}")
+        for attempt in range(max_attempts):
+            try:
+                resp = await client.post(
+                    url,
+                    headers={"x-goog-api-key": config.GEMINI_API_KEY, "Content-Type": "application/json"},
+                    json={
+                        "contents": contents,
+                        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                        "generationConfig": {"maxOutputTokens": 2048},
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                break  # muvaffaqiyatli — sikldan chiqamiz
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                # 503 (band) yoki 429 (limit) bo'lsa — biroz kutib, qayta uramiz
+                if e.response.status_code in (503, 429) and attempt < max_attempts - 1:
+                    await asyncio.sleep(backoff_seconds)
+                    backoff_seconds *= 2
+                    continue
+                raise HTTPException(status_code=503, detail="AI Yordamchi hozir band, birozdan so'ng qayta urinib ko'ring.")
+            except Exception as e:
+                last_error = e
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(backoff_seconds)
+                    backoff_seconds *= 2
+                    continue
+                raise HTTPException(status_code=503, detail="AI Yordamchiga ulanib bo'lmadi, birozdan so'ng qayta urinib ko'ring.")
 
     try:
         return data["candidates"][0]["content"]["parts"][0]["text"]
