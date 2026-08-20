@@ -47,7 +47,8 @@ def _get_client():
         consumer_key=config.ATMOS_CONSUMER_KEY,
         consumer_secret=config.ATMOS_CONSUMER_SECRET,
         store_id=config.ATMOS_STORE_ID,
-        test_mode=config.ATMOS_TEST_MODE,
+        test_mode=False,  # "test-partner.atmos.uz" mavjud emas (DNS xatosi berdi) — sandbox
+        # kalitlar bilan ham asosiy (partner.atmos.uz) manzilning o'zi ishlatiladi
         language="uz",
     )
     return _client
