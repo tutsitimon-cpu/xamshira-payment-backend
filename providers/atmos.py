@@ -94,7 +94,10 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
 
     try:
         return await asyncio.to_thread(_sync_create)
-    except Exception:
+    except Exception as e:
+        import traceback
+        print(f"[ATMOS XATOSI] {type(e).__name__}: {e}")
+        traceback.print_exc()
         return ""  # ATMOS vaqtincha ishlamasa, ilova shunchaki bu tugmani ko'rsatmaydi
 
 
@@ -143,6 +146,6 @@ async def atmos_check(order_id: str):
         if info.get("status") in (1, "1", "paid", "success"):
             mark_order_paid(order_id, external_id=order.get("external_id"))
             return {"status": "paid"}
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ATMOS TEKSHIRISH XATOSI] {type(e).__name__}: {e}")
     return {"status": order["status"]}
