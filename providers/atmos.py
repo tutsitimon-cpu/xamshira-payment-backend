@@ -33,16 +33,15 @@ _client = None
 
 def _get_client():
     """AtmosClient'ni faqat bir marta yaratadi (token keshini saqlab qolish
-    uchun), va agar FIXIE_URL berilgan bo'lsa, shu proksidan foydalanadi."""
+    uchun). Proksi bu yerda O'RNATILMAYDI — har bir chaqiruv atrofida,
+    faqat shu chaqiruv davomida vaqtincha o'rnatiladi (pastga qarang),
+    shunda boshqa so'rovlarga (masalan /health, Gemini, Telegram) ta'sir
+    qilmaydi."""
     global _client
     if _client is not None:
         return _client
 
     from atmos import AtmosClient
-
-    if config.FIXIE_URL:
-        os.environ["HTTPS_PROXY"] = config.FIXIE_URL
-        os.environ["HTTP_PROXY"] = config.FIXIE_URL
 
     _client = AtmosClient(
         consumer_key=config.ATMOS_CONSUMER_KEY,
@@ -54,6 +53,27 @@ def _get_client():
     return _client
 
 
+class _ScopedProxy:
+    """Fixie proksisini FAQAT shu 'with' bloki davomida yoqadi, keyin
+    darhol avvalgi holatga qaytaradi — shunda boshqa (parallel yoki
+    keyingi) so'rovlarga (masalan /health, Gemini, Telegram) ta'sir
+    qilmaydi."""
+    def __enter__(self):
+        self._prev_https = os.environ.get("HTTPS_PROXY")
+        self._prev_http = os.environ.get("HTTP_PROXY")
+        if config.FIXIE_URL:
+            os.environ["HTTPS_PROXY"] = config.FIXIE_URL
+            os.environ["HTTP_PROXY"] = config.FIXIE_URL
+        return self
+
+    def __exit__(self, *exc):
+        for key, prev in (("HTTPS_PROXY", self._prev_https), ("HTTP_PROXY", self._prev_http)):
+            if prev is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = prev
+
+
 async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = "") -> str:
     """/api/subscribe/init ichidan chaqiriladi — click/payme/paynet bilan
     bir xil pattern: buyurtma ID + summa (so'mda) beriladi, to'lov sahifasi
@@ -62,9 +82,12 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
         return ""  # hali sozlanmagan — ilova bu tugmani ko'rsatmasligi kerak
 
     def _sync_create():
-        client = _get_client()
-        amount_tiyin = amount_som * 100
-        transaction = client.create_transaction(amount=amount_tiyin, account=order_id)
+        with _ScopedProxy():
+            client = _get_client()
+            amount_tiyin = amount_som * 100
+            transaction = client.create_transaction(amount=amount_tiyin, account=order_id)
+        # get_*_payment_page_url — bu haqiqiy tarmoq so'rovi emas, faqat URL
+        # matnini quradi, shuning uchun proksi doirasidan tashqarida bo'lishi mumkin
         if config.ATMOS_TEST_MODE:
             return client.get_test_payment_page_url(transaction.transaction_id, redirect_url=return_url)
         return client.get_payment_page_url(transaction.transaction_id, redirect_url=return_url)
@@ -111,8 +134,9 @@ async def atmos_check(order_id: str):
         return {"status": order["status"]}  # ATMOS tranzaksiya ID hali yo'q
 
     def _sync_check():
-        client = _get_client()
-        return client.get_transaction_info(int(order["external_id"]))
+        with _ScopedProxy():
+            client = _get_client()
+            return client.get_transaction_info(int(order["external_id"]))
 
     try:
         info = await asyncio.to_thread(_sync_check)
