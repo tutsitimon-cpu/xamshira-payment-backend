@@ -54,20 +54,34 @@ def _get_client():
     return _client
 
 
-class _ScopedProxy:
-    """Fixie proksisini FAQAT shu 'with' bloki davomida yoqadi, keyin
+class _ScopedAtmosContext:
+    """Ikkita narsani FAQAT shu 'with' bloki davomida sozlaydi, keyin
     darhol avvalgi holatga qaytaradi — shunda boshqa (parallel yoki
     keyingi) so'rovlarga (masalan /health, Gemini, Telegram) ta'sir
-    qilmaydi."""
+    qilmaydi:
+      1. Fixie proksisi (ATMOS whitelist qilgan IP'dan chiqish uchun)
+      2. So'rov kutish vaqti — kutubxonada 30 soniya qattiq yozilgan,
+         ATMOS esa buni 120 soniyagacha oshirishni tavsiya qildi
+         (ba'zan javob sekinroq kelishi mumkin ekan)."""
     def __enter__(self):
         self._prev_https = os.environ.get("HTTPS_PROXY")
         self._prev_http = os.environ.get("HTTP_PROXY")
         if config.FIXIE_URL:
             os.environ["HTTPS_PROXY"] = config.FIXIE_URL
             os.environ["HTTP_PROXY"] = config.FIXIE_URL
+
+        import requests
+        self._orig_post = requests.post
+        def _patched_post(*args, **kwargs):
+            kwargs["timeout"] = 120  # kutubxonaning 30s qattiq belgilangan qiymatini almashtiramiz
+            return self._orig_post(*args, **kwargs)
+        requests.post = _patched_post
+
         return self
 
     def __exit__(self, *exc):
+        import requests
+        requests.post = self._orig_post
         for key, prev in (("HTTPS_PROXY", self._prev_https), ("HTTP_PROXY", self._prev_http)):
             if prev is None:
                 os.environ.pop(key, None)
@@ -83,7 +97,7 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
         return ""  # hali sozlanmagan — ilova bu tugmani ko'rsatmasligi kerak
 
     def _sync_create():
-        with _ScopedProxy():
+        with _ScopedAtmosContext():
             client = _get_client()
             amount_tiyin = amount_som * 100
             transaction = client.create_transaction(amount=amount_tiyin, account=order_id)
@@ -138,7 +152,7 @@ async def atmos_check(order_id: str):
         return {"status": order["status"]}  # ATMOS tranzaksiya ID hali yo'q
 
     def _sync_check():
-        with _ScopedProxy():
+        with _ScopedAtmosContext():
             client = _get_client()
             return client.get_transaction_info(int(order["external_id"]))
 
