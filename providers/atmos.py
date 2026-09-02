@@ -153,9 +153,13 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
         with _ScopedAtmosContext():
             client = _get_client()  # token olish/yangilashni o'zi boshqaradi
             token = client._ensure_token()
+            import datetime as _dt
+            expires = _dt.datetime.utcnow() + _dt.timedelta(minutes=30)
             body = {
                 "request_id": order_id,
                 "store_id": int(config.ATMOS_STORE_ID),
+                "expiration_time": 30,
+                "expiration_date": expires.strftime("%Y-%m-%dT%H:%M:%S"),
                 "account": order_id,
                 "amount": amount_som * 100,  # tiyinda
                 "success_url": return_url or "https://example.com/payment/done",
