@@ -139,20 +139,42 @@ class _ScopedAtmosContext:
 async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = "") -> str:
     """/api/subscribe/init ichidan chaqiriladi — click/payme/paynet bilan
     bir xil pattern: buyurtma ID + summa (so'mda) beriladi, to'lov sahifasi
-    havolasi qaytariladi."""
+    havolasi qaytariladi.
+
+    ATMOS'ning rasmiy hujjatlariga ko'ra (docs.atmos.uz), to'g'ri usul —
+    kutubxonaning oddiy create_transaction + URL-qurish usuli EMAS, balki
+    alohida /checkout/invoice/create so'rovi, bu esa tayyor, ishlaydigan
+    checkout havolasini o'zi qaytaradi."""
     if not config.ATMOS_CONSUMER_KEY or not config.ATMOS_CONSUMER_SECRET or not config.ATMOS_STORE_ID:
         return ""  # hali sozlanmagan — ilova bu tugmani ko'rsatmasligi kerak
 
     def _sync_create():
+        import requests as _requests
         with _ScopedAtmosContext():
-            client = _get_client()
-            amount_tiyin = amount_som * 100
-            transaction = client.create_transaction(amount=amount_tiyin, account=order_id)
-        # get_*_payment_page_url — bu haqiqiy tarmoq so'rovi emas, faqat URL
-        # matnini quradi, shuning uchun proksi doirasidan tashqarida bo'lishi mumkin
-        if config.ATMOS_TEST_MODE:
-            return client.get_test_payment_page_url(transaction.transaction_id, redirect_url=return_url)
-        return client.get_payment_page_url(transaction.transaction_id, redirect_url=return_url)
+            client = _get_client()  # token olish/yangilashni o'zi boshqaradi
+            token = client._ensure_token()
+            body = {
+                "request_id": order_id,
+                "store_id": int(config.ATMOS_STORE_ID),
+                "account": order_id,
+                "amount": amount_som * 100,  # tiyinda
+                "success_url": return_url or "https://example.com/payment/done",
+                "items": [{
+                    "items_id": "1",
+                    "code": "10305001001000000",  # IKPU: dasturiy ta'minot xizmati
+                    "name": "Tibbiy Yordamchi obuna",
+                    "amount": amount_som * 100,
+                    "quantity": 1,
+                }],
+            }
+            response = _requests.post(
+                f"{client.base_url}/checkout/invoice/create",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json=body,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("url", "")
 
     try:
         return await asyncio.to_thread(_sync_create)
