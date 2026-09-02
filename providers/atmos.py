@@ -47,23 +47,44 @@ def _get_client():
     from atmos.exceptions import AtmosAuthError
 
     def _fixed_get_token(self):
-        """ATMOS'ning YANGI apigw.atmos.uz manzili, kutubxonaning odatiy
-        (grant_type'ni so'rov TANASIDA yuboradigan) usulini QABUL QILMAYDI —
-        ATMOS o'zi tasdiqlagan formatga ko'ra, grant_type SO'ROV SATRIDA
-        (URL ichida, "?" dan keyin) bo'lishi kerak."""
-        headers = {"Authorization": self._get_auth_header()}
-        response = _requests.post(
-            f"{self.base_url}/token",
-            params={"grant_type": "client_credentials"},
-            headers=headers,
-            timeout=30,
-        )
-        if response.status_code != 200:
-            raise AtmosAuthError(f"Authentication failed: {response.text}")
-        token_data = response.json()
-        self.access_token = token_data["access_token"]
-        self.token_expires_at = _time.time() + token_data["expires_in"] - 60
-        return self.access_token
+        """ATMOS'ning YANGI apigw.atmos.uz manzili uchun, bir nechta keng
+        tarqalgan autentifikatsiya usulini KETMA-KET sinaymiz — chunki
+        aniq qaysi format kerakligi hali to'liq tasdiqlanmagan. Birinchi
+        muvaffaqiyatli bo'lgani ishlatiladi; barchasi muvaffaqiyatsiz
+        bo'lsa, ENG OXIRGI xato (batafsil) ko'rsatiladi."""
+        token_url = f"{self.base_url}/token"
+        auth_basic = self._get_auth_header()
+        attempts = [
+            # 1) Basic Auth header + grant_type so'rov satrida (ATMOS aytgan format)
+            {"params": {"grant_type": "client_credentials"},
+             "headers": {"Authorization": auth_basic}},
+            # 2) client_id/client_secret HAM so'rov satrida (Kong/ko'p api-gateway uslubi)
+            {"params": {"grant_type": "client_credentials",
+                        "client_id": self.consumer_key,
+                        "client_secret": self.consumer_secret}},
+            # 3) client_id/client_secret so'rov TANASIDA (form), grant_type esa satrida
+            {"params": {"grant_type": "client_credentials"},
+             "data": {"client_id": self.consumer_key, "client_secret": self.consumer_secret}},
+            # 4) Basic Auth + client_id HAM so'rov satrida qo'shilgan
+            {"params": {"grant_type": "client_credentials", "client_id": self.consumer_key},
+             "headers": {"Authorization": auth_basic}},
+        ]
+        last_error = None
+        for i, attempt in enumerate(attempts, 1):
+            try:
+                response = _requests.post(token_url, timeout=30, **attempt)
+                if response.status_code == 200:
+                    token_data = response.json()
+                    self.access_token = token_data["access_token"]
+                    self.token_expires_at = _time.time() + token_data["expires_in"] - 60
+                    print(f"[ATMOS] Muvaffaqiyatli usul: #{i} — {attempt}")
+                    return self.access_token
+                last_error = f"Urinish #{i} ({list(attempt.keys())}): {response.status_code} — {response.text}"
+                print(f"[ATMOS TOKEN URINISH XATOSI] {last_error}")
+            except Exception as e:
+                last_error = f"Urinish #{i}: {type(e).__name__}: {e}"
+                print(f"[ATMOS TOKEN URINISH XATOSI] {last_error}")
+        raise AtmosAuthError(f"Barcha 4 usul ham muvaffaqiyatsiz. Oxirgisi: {last_error}")
 
     AtmosClient._get_token = _fixed_get_token
 
