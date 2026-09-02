@@ -172,9 +172,10 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                 json=body,
             )
+            print(f"[ATMOS INVOICE STATUS] {response.status_code} — {response.text}")
             response.raise_for_status()
             data = response.json()
-            return data.get("url", "")
+            return data.get("url") or data.get("payload", {}).get("url", "")
 
     try:
         return await asyncio.to_thread(_sync_create)
