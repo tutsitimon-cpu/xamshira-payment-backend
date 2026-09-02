@@ -42,6 +42,30 @@ def _get_client():
         return _client
 
     from atmos import AtmosClient
+    import time as _time
+    import requests as _requests
+    from atmos.exceptions import AtmosAuthError
+
+    def _fixed_get_token(self):
+        """ATMOS'ning YANGI apigw.atmos.uz manzili, kutubxonaning odatiy
+        (grant_type'ni so'rov TANASIDA yuboradigan) usulini QABUL QILMAYDI —
+        ATMOS o'zi tasdiqlagan formatga ko'ra, grant_type SO'ROV SATRIDA
+        (URL ichida, "?" dan keyin) bo'lishi kerak."""
+        headers = {"Authorization": self._get_auth_header()}
+        response = _requests.post(
+            f"{self.base_url}/token",
+            params={"grant_type": "client_credentials"},
+            headers=headers,
+            timeout=30,
+        )
+        if response.status_code != 200:
+            raise AtmosAuthError(f"Authentication failed: {response.text}")
+        token_data = response.json()
+        self.access_token = token_data["access_token"]
+        self.token_expires_at = _time.time() + token_data["expires_in"] - 60
+        return self.access_token
+
+    AtmosClient._get_token = _fixed_get_token
 
     _client = AtmosClient(
         consumer_key=config.ATMOS_CONSUMER_KEY,
