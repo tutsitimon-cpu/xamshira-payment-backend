@@ -47,10 +47,12 @@ def _get_client():
         consumer_key=config.ATMOS_CONSUMER_KEY,
         consumer_secret=config.ATMOS_CONSUMER_SECRET,
         store_id=config.ATMOS_STORE_ID,
-        test_mode=False,  # "test-partner.atmos.uz" mavjud emas (DNS xatosi berdi) — sandbox
-        # kalitlar bilan ham asosiy (partner.atmos.uz) manzilning o'zi ishlatiladi
+        test_mode=False,
         language="uz",
     )
+    # Kutubxonaning ichki manzili ("partner.atmos.uz") ESKIRGAN — ATMOS
+    # o'zi tasdiqlagan HOZIRGI, TO'G'RI manzil bilan almashtiramiz:
+    _client.base_url = "https://apigw.atmos.uz"
     return _client
 
 
