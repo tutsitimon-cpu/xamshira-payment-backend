@@ -154,7 +154,7 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
             client = _get_client()  # token olish/yangilashni o'zi boshqaradi
             token = client._ensure_token()
             import datetime as _dt
-            expires = _dt.datetime.utcnow() + _dt.timedelta(minutes=30)
+            expires = _dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)  # Toshkent (UTC+5) + 30 daqiqa
             body = {
                 "request_id": order_id,
                 "store_id": int(config.ATMOS_STORE_ID),
