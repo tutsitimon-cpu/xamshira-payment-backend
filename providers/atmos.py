@@ -169,6 +169,13 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
                     "name": "Tibbiy Yordamchi obuna",
                     "amount": amount_som * 100,
                     "quantity": 1,
+                    "details": [
+                        {"name": "package_code", "values": ""},
+                        {"name": "mark_code", "values": ""},
+                        {"name": "tin", "values": ""},
+                        {"name": "discount", "values": "0"},
+                        {"name": "quantity", "values": "1"},
+                    ],
                 }],
             }
             response = _requests.post(
