@@ -90,3 +90,18 @@ def admin_stats(key: str = ""):
         "referral_royxatdan_otgan": referral_users["c"],
         "referral_muvaffaqiyatli_taklif": referral_success["c"],
     }
+
+
+@router.get("/api/admin/force-paid/{order_id}")
+def admin_force_paid(order_id: str, key: str = "", external_id: str = ""):
+    """Qo'lda, brauzer orqali, muayyan buyurtmani 'to'langan' deb belgilash —
+    ATMOS webhook/status-tekshirish muammosi tufayli kerak bo'lganda,
+    zaxira (favqulodda) yechim sifatida ishlatiladi."""
+    if not config.ADMIN_KEY or key != config.ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Ruxsat yo'q")
+    from database import get_order, mark_order_paid
+    order = get_order(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    mark_order_paid(order_id, external_id=external_id or order.get("external_id"))
+    return {"success": True, "order_id": order_id, "phone": order["phone"], "tier": order["tier"]}
