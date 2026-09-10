@@ -180,6 +180,10 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
             print(f"[ATMOS INVOICE STATUS] {response.status_code} — {response.text}")
             response.raise_for_status()
             data = response.json()
+            payment_id = data.get("payment_id")
+            if payment_id:
+                from database import set_order_external_id
+                set_order_external_id(order_id, str(payment_id))
             return data.get("url") or data.get("payload", {}).get("url", "")
 
     try:
