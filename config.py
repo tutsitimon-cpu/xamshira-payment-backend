@@ -45,6 +45,7 @@ PAYNET_MERCHANT_ID = os.getenv("PAYNET_MERCHANT_ID", "")
 ATMOS_CONSUMER_KEY = os.getenv("ATMOS_CONSUMER_KEY", "")
 ATMOS_CONSUMER_SECRET = os.getenv("ATMOS_CONSUMER_SECRET", "")
 ATMOS_STORE_ID = os.getenv("ATMOS_STORE_ID", "")
+ATMOS_API_KEY = os.getenv("ATMOS_API_KEY", "")  # webhook imzosini tasdiqlash uchun, ATMOS alohida bergan kalit
 ATMOS_TEST_MODE = os.getenv("ATMOS_TEST_MODE", "true").lower() == "true"  # production kalitlar kelgach "false" qilinadi
 # Fixie orqali statik IP — ATMOS whitelist qilgan IP'lardan so'rov yuborish uchun
 FIXIE_URL = os.getenv("FIXIE_URL", "")  # masalan: http://fixie:PASS@ventoux.usefixie.com:80
