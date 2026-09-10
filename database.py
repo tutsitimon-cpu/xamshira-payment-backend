@@ -89,6 +89,16 @@ def create_order(phone: str, amount_tiyin: int, provider: str, tier: str = "toif
     return order_id
 
 
+def set_order_external_id(order_id: str, external_id: str):
+    """Invoice yaratilganda, ATMOS'ning payment_id'sini saqlaydi — bu,
+    keyinchalik 'to'lovni tekshirish' funksiyasi ishlashi uchun zarur
+    (avval bu qadam yo'qolib qolgan, shuning uchun tekshirish funksiyasi
+    hech qachon ATMOS'ga haqiqiy so'rov yubormay, doim 'pending' qaytargan)."""
+    with get_conn() as conn:
+        conn.execute("UPDATE orders SET external_id = ? WHERE id = ?", (external_id, order_id))
+        conn.commit()
+
+
 def get_order(order_id: str):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
