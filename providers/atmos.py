@@ -202,7 +202,7 @@ async def atmos_webhook(request: Request):
     from atmos.utils import validate_callback_signature, create_callback_response
 
     data = await request.json()
-    api_key = config.ATMOS_CONSUMER_SECRET  # webhook imzosi uchun ham shu kalit ishlatiladi
+    api_key = config.ATMOS_API_KEY or config.ATMOS_CONSUMER_SECRET  # ATMOS alohida bergan kalit, hali sozlanmagan bo'lsa — zaxira sifatida eskisi
 
     if not validate_callback_signature(data, api_key):
         return create_callback_response(success=False, message="Noto'g'ri imzo")
