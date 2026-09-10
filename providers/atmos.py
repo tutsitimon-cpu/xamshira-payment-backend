@@ -231,13 +231,25 @@ async def atmos_check(order_id: str):
         return {"status": order["status"]}  # ATMOS tranzaksiya ID hali yo'q
 
     def _sync_check():
+        import requests as _requests
         with _ScopedAtmosContext():
             client = _get_client()
-            return client.get_transaction_info(int(order["external_id"]))
+            token = client._ensure_token()
+            response = _requests.post(
+                f"{client.base_url}/merchant/pay/get",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json={"store_id": int(config.ATMOS_STORE_ID), "transaction_id": int(order["external_id"])},
+                timeout=30,
+            )
+            print(f"[ATMOS CHECK JAVOBI] {response.status_code} — {response.text}")
+            return response.json()
 
     try:
         info = await asyncio.to_thread(_sync_check)
-        if info.get("status") in (1, "1", "paid", "success"):
+        status_block = info.get("status", {})
+        status_code = status_block.get("code") if isinstance(status_block, dict) else status_block
+        # ATMOS'ning "success" kodi — invoice/create'da ham ko'rgan "0" kodi bilan bir xil
+        if str(status_code) in ("0", "1", "paid", "success", "confirmed"):
             mark_order_paid(order_id, external_id=order.get("external_id"))
             return {"status": "paid"}
     except Exception as e:
