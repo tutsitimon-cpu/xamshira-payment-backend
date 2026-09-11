@@ -249,11 +249,11 @@ async def atmos_check(order_id: str):
 
             attempts = []
             if payment_id:
-                attempts.append(("/merchant/pay/get", {"store_id": store_id, "transaction_id": int(payment_id)}))
+                # Tasdiqlangan, to'g'ri ishlaydigan manzil — birinchi sinaladi
                 attempts.append(("/checkout/invoice/get", {"store_id": store_id, "payment_id": int(payment_id)}))
+                attempts.append(("/merchant/pay/get", {"store_id": store_id, "transaction_id": int(payment_id)}))
             if invoice_token:
                 attempts.append(("/checkout/invoice/get", {"store_id": store_id, "id": invoice_token}))
-                attempts.append(("/merchant/pay/get", {"store_id": store_id, "id": invoice_token}))
 
             for path, body in attempts:
                 try:
@@ -271,10 +271,11 @@ async def atmos_check(order_id: str):
 
     try:
         info = await asyncio.to_thread(_sync_check)
-        status_block = info.get("status") or info.get("result") or {}
-        status_code = status_block.get("code") if isinstance(status_block, dict) else status_block
-        # ATMOS'ning "success" kodi — invoice/create'da ham ko'rgan "0" kodi bilan bir xil
-        if str(status_code) in ("0", "1", "paid", "success", "confirmed", "OK"):
+        # MUHIM: info["status"]["code"]=="0" faqat "ATMOS bu yozuvni topdi" deganidir,
+        # HALI TO'LANGANINI bildirmaydi! Haqiqiy to'lov holatini "success"/"state"
+        # maydonlaridan tekshiramiz.
+        is_paid = bool(info.get("success")) or str(info.get("state", "")).upper() in ("PAID", "CONFIRMED", "COMPLETED", "SUCCESS")
+        if is_paid:
             mark_order_paid(order_id, external_id=order.get("external_id"))
             return {"status": "paid"}
     except Exception as e:
