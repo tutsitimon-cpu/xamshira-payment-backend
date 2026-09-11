@@ -181,9 +181,13 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
             response.raise_for_status()
             data = response.json()
             payment_id = data.get("payment_id")
+            invoice_token = data.get("token")
             if payment_id:
                 from database import set_order_external_id
-                set_order_external_id(order_id, str(payment_id))
+                # Ikkalasini ham saqlaymiz (pipe bilan ajratilgan) — checkout/invoice
+                # statusini tekshirishda ATMOS aynan qaysi identifikatorni
+                # kutishi hali aniq emas, shuning uchun ikkalasini ham sinaymiz.
+                set_order_external_id(order_id, f"{payment_id}|{invoice_token or ''}")
             return data.get("url") or data.get("payload", {}).get("url", "")
 
     try:
@@ -232,24 +236,45 @@ async def atmos_check(order_id: str):
 
     def _sync_check():
         import requests as _requests
+        raw = order["external_id"] or ""
+        parts = raw.split("|")
+        payment_id = parts[0] if parts and parts[0] else None
+        invoice_token = parts[1] if len(parts) > 1 and parts[1] else None
+
         with _ScopedAtmosContext():
             client = _get_client()
-            token = client._ensure_token()
-            response = _requests.post(
-                f"{client.base_url}/merchant/pay/get",
-                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                json={"store_id": int(config.ATMOS_STORE_ID), "transaction_id": int(order["external_id"])},
-                timeout=30,
-            )
-            print(f"[ATMOS CHECK JAVOBI] {response.status_code} — {response.text}")
-            return response.json()
+            bearer = client._ensure_token()
+            headers = {"Authorization": f"Bearer {bearer}", "Content-Type": "application/json"}
+            store_id = int(config.ATMOS_STORE_ID)
+
+            attempts = []
+            if payment_id:
+                attempts.append(("/merchant/pay/get", {"store_id": store_id, "transaction_id": int(payment_id)}))
+                attempts.append(("/checkout/invoice/get", {"store_id": store_id, "payment_id": int(payment_id)}))
+            if invoice_token:
+                attempts.append(("/checkout/invoice/get", {"store_id": store_id, "id": invoice_token}))
+                attempts.append(("/merchant/pay/get", {"store_id": store_id, "id": invoice_token}))
+
+            for path, body in attempts:
+                try:
+                    response = _requests.post(f"{client.base_url}{path}", headers=headers, json=body, timeout=20)
+                    print(f"[ATMOS CHECK URINISH] {path} {body} → {response.status_code} — {response.text}")
+                    data = response.json()
+                    block = data.get("status") or data.get("result") or {}
+                    code = block.get("code") if isinstance(block, dict) else block
+                    # "Topilmadi" xatosi bo'lmasa — bu, to'g'ri manzil bo'lishi mumkin
+                    if str(code) != "STPIMS-ERR-061":
+                        return data
+                except Exception as e:
+                    print(f"[ATMOS CHECK URINISH XATOSI] {path} → {type(e).__name__}: {e}")
+            return {}
 
     try:
         info = await asyncio.to_thread(_sync_check)
-        status_block = info.get("status", {})
+        status_block = info.get("status") or info.get("result") or {}
         status_code = status_block.get("code") if isinstance(status_block, dict) else status_block
         # ATMOS'ning "success" kodi — invoice/create'da ham ko'rgan "0" kodi bilan bir xil
-        if str(status_code) in ("0", "1", "paid", "success", "confirmed"):
+        if str(status_code) in ("0", "1", "paid", "success", "confirmed", "OK"):
             mark_order_paid(order_id, external_id=order.get("external_id"))
             return {"status": "paid"}
     except Exception as e:
