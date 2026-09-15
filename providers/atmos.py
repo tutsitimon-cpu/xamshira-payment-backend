@@ -215,24 +215,30 @@ async def atmos_webhook(request: Request):
 
     data = await request.json()
     api_key = config.ATMOS_API_KEY or config.ATMOS_CONSUMER_SECRET
+    print(f"[ATMOS WEBHOOK KELDI] {data}")
 
     required = ["store_id", "transaction_id", "account", "amount", "sign"]
     if not all(k in data for k in required):
+        print(f"[ATMOS WEBHOOK] Maydon yetishmayapti. Kelgan kalitlar: {list(data.keys())}")
         return create_callback_response(success=False, message="Majburiy maydon yetishmayapti")
 
     sign_string = f"{data['store_id']}{data['transaction_id']}{data['account']}{data['amount']}{api_key}"
     calculated_sign = hashlib.md5(sign_string.encode()).hexdigest()
+    print(f"[ATMOS WEBHOOK] sign_string={sign_string!r} hisoblangan={calculated_sign} kelgan={data['sign']}")
 
     if data["sign"] != calculated_sign:
+        print("[ATMOS WEBHOOK] IMZO MOS KELMADI")
         return create_callback_response(success=False, message="Noto'g'ri imzo")
 
     order_id = data.get("account")  # bizning order_id shu yerda "account" nomi bilan keladi
     order = get_order(order_id) if order_id else None
     if not order:
+        print(f"[ATMOS WEBHOOK] Buyurtma topilmadi: {order_id}")
         return create_callback_response(success=False, message="Buyurtma topilmadi")
 
     if order["status"] != "paid":
         mark_order_paid(order_id, external_id=str(data.get("transaction_id", "")))
+        print(f"[ATMOS WEBHOOK] Buyurtma to'landi deb belgilandi: {order_id}")
 
     return create_callback_response(success=True)
 
