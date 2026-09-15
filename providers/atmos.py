@@ -202,16 +202,31 @@ async def build_atmos_pay_url(order_id: str, amount_som: int, return_url: str = 
 @router.post("/api/atmos/webhook")
 async def atmos_webhook(request: Request):
     """ATMOS to'lov muvaffaqiyatli/muvaffaqiyatsiz bo'lganda shu yerga
-    xabar yuboradi. Imzoni tekshiramiz, keyin buyurtmani yangilaymiz."""
-    from atmos.utils import validate_callback_signature, create_callback_response
+    xabar yuboradi. Imzoni tekshiramiz, keyin buyurtmani yangilaymiz.
+
+    MUHIM: atmos-pkg kutubxonasining validate_callback_signature funksiyasi
+    "invoice" nomli maydonni kutadi, lekin ATMOS, haqiqatda, "account" nomli
+    maydonni yuboradi — shuning uchun, kutubxona doim "Noto'g'ri imzo" deb
+    rad etar edi. Bu yerda, ATMOS'ning o'zi bergan aniq formulaga ko'ra,
+    o'zimizning to'g'ri tekshiruvni yozamiz:
+    sign = MD5(store_id + transaction_id + account + amount + api_key)"""
+    from atmos.utils import create_callback_response
+    import hashlib
 
     data = await request.json()
-    api_key = config.ATMOS_API_KEY or config.ATMOS_CONSUMER_SECRET  # ATMOS alohida bergan kalit, hali sozlanmagan bo'lsa — zaxira sifatida eskisi
+    api_key = config.ATMOS_API_KEY or config.ATMOS_CONSUMER_SECRET
 
-    if not validate_callback_signature(data, api_key):
+    required = ["store_id", "transaction_id", "account", "amount", "sign"]
+    if not all(k in data for k in required):
+        return create_callback_response(success=False, message="Majburiy maydon yetishmayapti")
+
+    sign_string = f"{data['store_id']}{data['transaction_id']}{data['account']}{data['amount']}{api_key}"
+    calculated_sign = hashlib.md5(sign_string.encode()).hexdigest()
+
+    if data["sign"] != calculated_sign:
         return create_callback_response(success=False, message="Noto'g'ri imzo")
 
-    order_id = data.get("invoice")  # bizning order_id shu yerda "invoice" nomi bilan keladi
+    order_id = data.get("account")  # bizning order_id shu yerda "account" nomi bilan keladi
     order = get_order(order_id) if order_id else None
     if not order:
         return create_callback_response(success=False, message="Buyurtma topilmadi")
